@@ -1,0 +1,138 @@
+services:
+  postgres:
+    image: postgres:16
+    container_name: payment_postgres
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      ENV: ${ENV}
+    ports:
+      - "5460:5432"
+    volumes:
+      - payment_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d payment_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    container_name: payment_rabbitmq
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  migrate:
+    image: migrate/migrate
+    container_name: payment_migrate
+    volumes:
+      - ./payment-service/migrations:/migrations
+    command:
+      [
+        "-path",
+        "/migrations",
+        "-database",
+        "${DATABASE_URL}",
+        "up"
+      ]
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  payment-integration-service:
+    build:
+      context: ./payment-integration-service
+      dockerfile: Dockerfile
+      args:
+        ENV: ${ENV}
+    container_name: payment_integration_service
+    working_dir: /app
+    volumes:
+      - ./payment-integration-service:/app
+      - payment_integration_go_mod:/go/pkg/mod
+      - payment_integration_air_tmp:/app/tmp
+    ports:
+      - "8081:8081"
+    environment:
+      PORT: 8081
+      PAKASIR_PROJECT_KEY: ${PAKASIR_PROJECT_KEY}
+      PAKASIR_SERVER_KEY: ${PAKASIR_SERVER_KEY:-dummy-pakasir-server-key}
+      MIDTRANS_SERVER_KEY: ${MIDTRANS_SERVER_KEY:-dummy-midtrans-server-key}
+      MIDTRANS_BASE_URL: ${MIDTRANS_BASE_URL:-https://api.sandbox.midtrans.com}
+      ENV: ${ENV}
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+  payment-service:
+    build:
+      context: ./payment-service
+      dockerfile: Dockerfile
+      args:
+        ENV: ${ENV}
+    container_name: payment_service
+    working_dir: /app
+    volumes:
+      - ./payment-service:/app
+      - payment_service_go_mod:/go/pkg/mod
+      - payment_service_air_tmp:/app/tmp
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      DATABASE_URL: ${DATABASE_URL}
+      PUBLIC_BASE_URL: http://localhost:8080
+      PAYMENT_INTEGRATION_URL: http://payment-integration-service:8081
+      RABBITMQ_URL: ${RABBITMQ_URL}
+      RABBITMQ_EXCHANGE: payment.events
+    depends_on:
+      postgres:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+      payment-integration-service:
+        condition: service_started
+      migrate:
+        condition: service_completed_successfully
+
+  payment-consumer:
+    build:
+      context: ./payment-consumer
+      dockerfile: Dockerfile
+      args:
+        ENV: ${ENV}
+    container_name: payment_consumer
+    working_dir: /app
+    volumes:
+      - ./payment-consumer:/app
+      - payment_consumer_go_mod:/go/pkg/mod
+      - payment_consumer_air_tmp:/app/tmp
+    environment:
+      DATABASE_URL: ${DATABASE_URL}
+      RABBITMQ_URL: ${RABBITMQ_URL}
+      RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+      CHAT_USAGE_AUTH_TOKEN: ${CHAT_USAGE_AUTH_TOKEN}
+      ENV: ${ENV}
+      # Optional. Empty means log mock alert.
+      ALERT_API_URL: ""
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+
+volumes:
+  payment_postgres_data:
+  payment_service_go_mod:
+  payment_service_air_tmp:
+  payment_integration_go_mod:
+  payment_integration_air_tmp:
+  payment_consumer_go_mod:
+  payment_consumer_air_tmp:
