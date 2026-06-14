@@ -109,6 +109,7 @@ services:
         condition: service_started
       migrate:
         condition: service_completed_successfully
+    restart: on-failure
     networks:
       - payment-network
 
@@ -137,6 +138,7 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+    restart: on-failure
     networks:
       - payment-network
 
