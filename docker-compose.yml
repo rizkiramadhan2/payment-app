@@ -16,6 +16,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - payment-network
 
   rabbitmq:
     image: rabbitmq:3-management
@@ -28,6 +30,8 @@ services:
       interval: 5s
       timeout: 5s
       retries: 10
+    networks:
+      - payment-network
 
   migrate:
     image: migrate/migrate
@@ -45,6 +49,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
+    networks:
+      - payment-network
 
   payment-integration-service:
     build:
@@ -70,6 +76,8 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+    networks:
+      - payment-network
 
   payment-service:
     build:
@@ -101,6 +109,8 @@ services:
         condition: service_started
       migrate:
         condition: service_completed_successfully
+    networks:
+      - payment-network
 
   payment-consumer:
     build:
@@ -127,6 +137,11 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+    networks:
+      - payment-network
+
+networks:
+  payment-network:
 
 volumes:
   payment_postgres_data:
