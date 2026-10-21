@@ -44,7 +44,7 @@ type NormalizedCallback struct {
 type ProviderPaymentStatus struct {
 	Provider            string `json:"provider"`
 	ProviderReferenceID string `json:"provider_reference_id"`
-	Method              string `json:"method"`
+	Method              string `json:"method,omitempty"`
 	TrxID               string `json:"trx_id"`
 	Status              string `json:"status"`
 	Amount              int64  `json:"amount"`

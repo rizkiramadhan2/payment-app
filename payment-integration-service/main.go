@@ -23,7 +23,7 @@ func main() {
 	registry := providers.NewRegistry()
 
 	pakasirServerKey := getEnv("PAKASIR_SERVER_KEY", "dummy-pakasir-server-key")
-	pakasirBaseURL := getEnv("PAKASIR_BASE_URL", "https://app.pakasir.com/api")
+	pakasirBaseURL := getEnv("PAKASIR_BASE_URL", "https://app.pakasir.com/api/v2")
 	pakasirProjectKey := getEnv("PAKASIR_PROJECT_KEY", "")
 
 	registry.Register(

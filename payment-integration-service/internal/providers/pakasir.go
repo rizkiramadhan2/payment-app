@@ -42,93 +42,104 @@ func (p *ProviderPakasir) CreatePayment(ctx context.Context, req entity.CreatePa
 
 	if req.Method == "" {
 		err := fmt.Errorf("payment method is required")
-		log.Printf("pakasir create payment failed: order_id=%s error=%v", req.OrderID, err)
+		log.Printf("pakasir create payment failed: trx_id=%s error=%v", req.TrxID, err)
 		return nil, err
 	}
 
 	if req.Amount <= 0 {
 		err := fmt.Errorf("amount must be greater than 0")
-		log.Printf("pakasir create payment failed: order_id=%s error=%v", req.OrderID, err)
+		log.Printf("pakasir create payment failed: trx_id=%s error=%v", req.TrxID, err)
 		return nil, err
 	}
 
-	if req.OrderID == "" {
-		err := fmt.Errorf("order_id is required")
+	if req.TrxID == "" {
+		err := fmt.Errorf("trx_id is required")
 		log.Printf("pakasir create payment failed: error=%v", err)
 		return nil, err
 	}
 
-	apiURL := p.BaseURL + "/transactioncreate/" + req.Method
+	apiURL := p.BaseURL + "/create-transaction/" + p.ProjectKey + "/" + req.TrxID
 	body := map[string]any{
-		"project":  p.ProjectKey,
-		"api_key":  p.ServerKey,
-		"order_id": req.OrderID,
-		"amount":   req.Amount,
+		"method": req.Method,
+		"amount": req.Amount,
 	}
 
 	bodyBytes, err := json.Marshal(body)
 	if err != nil {
-		log.Printf("pakasir create payment failed to marshal request body: order_id=%s method=%s error=%v", req.OrderID, req.Method, err)
+		log.Printf("pakasir create payment failed to marshal request body: trx_id=%s method=%s error=%v", req.TrxID, req.Method, err)
 		return nil, err
 	}
 
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, apiURL, bytes.NewBuffer(bodyBytes))
 	if err != nil {
-		log.Printf("pakasir create payment failed to create request: order_id=%s method=%s error=%v", req.OrderID, req.Method, err)
+		log.Printf("pakasir create payment failed to create request: trx_id=%s method=%s error=%v", req.TrxID, req.Method, err)
 		return nil, err
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
+	httpReq.Header.Set("X-Api-Key", p.ServerKey)
 
 	httpClient := &http.Client{}
 	httpResp, err := httpClient.Do(httpReq)
 	if err != nil {
-		log.Printf("pakasir create payment request failed: order_id=%s method=%s error=%v", req.OrderID, req.Method, err)
+		log.Printf("pakasir create payment request failed: trx_id=%s method=%s error=%v", req.TrxID, req.Method, err)
 		return nil, err
 	}
 	defer httpResp.Body.Close()
 	respBody, err := io.ReadAll(httpResp.Body)
 	if err != nil {
-		log.Printf("pakasir create payment failed to read response body: order_id=%s method=%s error=%v", req.OrderID, req.Method, err)
+		log.Printf("pakasir create payment failed to read response body: trx_id=%s method=%s error=%v", req.TrxID, req.Method, err)
 		return nil, err
 	}
 
 	if httpResp.StatusCode != http.StatusOK {
-		log.Printf("pakasir create payment returned unexpected status: order_id=%s method=%s status_code=%d", req.OrderID, req.Method, httpResp.StatusCode)
+		log.Printf("pakasir create payment returned unexpected status: trx_id=%s method=%s status_code=%d", req.TrxID, req.Method, httpResp.StatusCode)
 		return nil, err
 	}
 
 	pakasirRespStruct := struct {
-		Payment struct {
-			Project       string `json:"project"`
-			OrderID       string `json:"order_id"`
-			Amount        int64  `json:"amount"`
-			Fee           int64  `json:"fee"`
-			TotalPayment  int64  `json:"total_payment"`
-			PaymentMethod string `json:"payment_method"`
-			PaymentNumber string `json:"payment_number"`
-			ExpiredAt     string `json:"expired_at"`
-		} `json:"payment"`
+		Project       string `json:"project"`
+		OrderID       string `json:"order_id"`
+		TrxID         string `json:"txn_id"`
+		Amount        int64  `json:"amount"`
+		Fee           int64  `json:"fee"`
+		TotalPayment  int64  `json:"total_payment"`
+		PaymentMethod string `json:"payment_method"`
+		QRString      string `json:"qr_string"`
+		VANumber      string `json:"va_number"`
+		ExpiredAt     string `json:"expired_at"`
 	}{}
 
 	err = json.Unmarshal(respBody, &pakasirRespStruct)
 	if err != nil {
-		log.Printf("pakasir create payment failed to decode response: order_id=%s method=%s error=%v", req.OrderID, req.Method, err)
+		log.Printf("pakasir create payment failed to decode response: trx_id=%s method=%s error=%v", req.TrxID, req.Method, err)
+		return nil, err
+	}
+
+	paymentURL := ""
+	switch req.Method {
+	case "qris":
+		paymentURL = pakasirRespStruct.QRString
+	case "va":
+		paymentURL = pakasirRespStruct.VANumber
+	default:
+		err := fmt.Errorf("unsupported payment method: %s", req.Method)
+		log.Printf("pakasir create payment failed: trx_id=%s method=%s error=%v", req.TrxID, req.Method, err)
 		return nil, err
 	}
 
 	resp := &entity.CreatePaymentResponse{
 		Provider:            p.Name(),
 		Method:              req.Method,
-		ProviderReferenceID: pakasirRespStruct.Payment.OrderID,
-		ExpiredAt:           pakasirRespStruct.Payment.ExpiredAt,
-		PaymentURL:          pakasirRespStruct.Payment.PaymentNumber,
-		TotalAmount:         pakasirRespStruct.Payment.TotalPayment,
-		RawResponse:         pakasirRespStruct.Payment,
+		ProviderReferenceID: pakasirRespStruct.TrxID,
+		ExpiredAt:           pakasirRespStruct.ExpiredAt,
+		PaymentURL:          paymentURL,
+		TotalAmount:         pakasirRespStruct.TotalPayment,
+		RawResponse:         pakasirRespStruct,
 		Status:              StatusPending,
 	}
 
-	log.Printf("pakasir create payment success: order_id=%s method=%s provider_reference_id=%s", req.OrderID, req.Method, resp.ProviderReferenceID)
+	log.Printf("pakasir create payment success: trx_id=%s method=%s provider_reference_id=%s", req.TrxID, req.Method, resp.ProviderReferenceID)
 	return resp, nil
 }
 
@@ -178,12 +189,14 @@ func (p *ProviderPakasir) GetPaymentStatus(ctx context.Context, providerReferenc
 	}
 
 	amount := opts[0].(int64)
-	apiURL := p.BaseURL + "/transactiondetail?project=" + p.ProjectKey + "&amount=" + fmt.Sprintf("%d", amount) + "&order_id=" + providerReferenceID + "&api_key=" + p.ServerKey
+	apiURL := p.BaseURL + "/transaction-status/" + p.ProjectKey + "/" + providerReferenceID
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodGet, apiURL, nil)
 	if err != nil {
 		log.Printf("pakasir get payment status failed to create request: provider_reference_id=%s amount=%d error=%v", providerReferenceID, amount, err)
 		return nil, err
 	}
+
+	httpReq.Header.Set("X-Api-Key", p.ServerKey)
 
 	httpClient := &http.Client{}
 	httpResp, err := httpClient.Do(httpReq)
@@ -200,14 +213,12 @@ func (p *ProviderPakasir) GetPaymentStatus(ctx context.Context, providerReferenc
 	}
 
 	responseStruct := struct {
-		Transaction struct {
-			Amount        int64  `json:"amount"`
-			OrderID       string `json:"order_id"`
-			Project       string `json:"project"`
-			Status        string `json:"status"`
-			PaymentMethod string `json:"payment_method"`
-			CompletedAt   string `json:"completed_at"`
-		} `json:"transaction"`
+		Amount      int64  `json:"amount"`
+		OrderID     string `json:"order_id"`
+		TrxID       string `json:"txn_id"`
+		Project     string `json:"project"`
+		Status      string `json:"status"`
+		CompletedAt string `json:"completed_at"`
 	}{}
 
 	respBody, err := io.ReadAll(httpResp.Body)
@@ -223,12 +234,11 @@ func (p *ProviderPakasir) GetPaymentStatus(ctx context.Context, providerReferenc
 
 	resp := &entity.ProviderPaymentStatus{
 		Provider:            p.Name(),
-		Method:              responseStruct.Transaction.PaymentMethod,
-		TrxID:               responseStruct.Transaction.OrderID,
-		Status:              responseStruct.Transaction.Status,
-		Amount:              responseStruct.Transaction.Amount,
+		TrxID:               responseStruct.TrxID,
+		Status:              responseStruct.Status,
+		Amount:              responseStruct.Amount,
 		Currency:            "IDR",
-		ProviderReferenceID: responseStruct.Transaction.OrderID,
+		ProviderReferenceID: responseStruct.TrxID,
 		RawResponse:         responseStruct,
 	}
 
