@@ -31,6 +31,7 @@ type VerifyCallbackRequest struct {
 type NormalizedCallback struct {
 	Provider            string `json:"provider"`
 	TrxID               string `json:"trx_id"`
+	OrderID             string `json:"order_id"`
 	ProviderReferenceID string `json:"provider_reference_id"`
 	Method              string `json:"method"`
 	Status              string `json:"status"`

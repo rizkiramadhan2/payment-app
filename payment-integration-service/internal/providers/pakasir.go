@@ -58,7 +58,7 @@ func (p *ProviderPakasir) CreatePayment(ctx context.Context, req entity.CreatePa
 		return nil, err
 	}
 
-	apiURL := p.BaseURL + "/create-transaction/" + p.ProjectKey + "/" + req.TrxID
+	apiURL := p.BaseURL + "/create-transaction/" + p.ProjectKey + "/" + req.OrderID
 	body := map[string]any{
 		"method": req.Method,
 		"amount": req.Amount,
@@ -66,7 +66,7 @@ func (p *ProviderPakasir) CreatePayment(ctx context.Context, req entity.CreatePa
 
 	bodyBytes, err := json.Marshal(body)
 	if err != nil {
-		log.Printf("pakasir create payment failed to marshal request body: trx_id=%s method=%s error=%v", req.TrxID, req.Method, err)
+		log.Printf("pakasir create payment failed to marshal request body: order_id=%s method=%s error=%v", req.OrderID, req.Method, err)
 		return nil, err
 	}
 
@@ -146,9 +146,10 @@ func (p *ProviderPakasir) CreatePayment(ctx context.Context, req entity.CreatePa
 func (p *ProviderPakasir) VerifyAndNormalizeCallback(ctx context.Context, headers map[string]string, rawBody []byte) (*entity.NormalizedCallback, error) {
 
 	bodyStruct := struct {
-		OrderID string `json:"order_id"`
-		Amount  int64  `json:"amount"`
-		Method  string `json:"method"`
+		ProviderReferenceID string `json:"txn_id"`
+		OrderID             string `json:"order_id"`
+		Amount              int64  `json:"amount"`
+		Method              string `json:"method"`
 	}{}
 	err := json.Unmarshal(rawBody, &bodyStruct)
 	if err != nil {
@@ -156,7 +157,7 @@ func (p *ProviderPakasir) VerifyAndNormalizeCallback(ctx context.Context, header
 	}
 
 	// get payment status from pakasir API to verify the callback
-	paymentResp, err := p.GetPaymentStatus(ctx, bodyStruct.OrderID, bodyStruct.Amount)
+	paymentResp, err := p.GetPaymentStatus(ctx, bodyStruct.ProviderReferenceID, bodyStruct.Amount)
 	if err != nil {
 		return nil, err
 	}
@@ -171,8 +172,9 @@ func (p *ProviderPakasir) VerifyAndNormalizeCallback(ctx context.Context, header
 	return &entity.NormalizedCallback{
 		Provider:            p.Name(),
 		Method:              bodyStruct.Method,
-		ProviderReferenceID: bodyStruct.OrderID,
+		ProviderReferenceID: paymentResp.ProviderReferenceID,
 		TrxID:               bodyStruct.OrderID,
+		OrderID:             bodyStruct.OrderID,
 		Amount:              bodyStruct.Amount,
 		Status:              StatusPaid,
 		RawPayload:          bodyStruct,
