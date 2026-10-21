@@ -22,6 +22,7 @@ type Config struct {
 	AlertTelegramAPIURL string
 	TelegramBotToken    string
 	TelegramChatID      string
+	ChatUsageAPIBaseURL string
 	ChatUsageAuthToken  string
 }
 
@@ -75,7 +76,7 @@ func HandleMessage(
 		return HandleAlertTelegram(ctx, appCfg, event)
 
 	case "chat_usage":
-		return chatusage.HandleUpdateUsage(ctx, appCfg.ChatUsageAuthToken, chatusage.Event{
+		return chatusage.HandleUpdateUsage(ctx, appCfg.ChatUsageAPIBaseURL, appCfg.ChatUsageAuthToken, chatusage.Event{
 			TrxID:   event.TrxID,
 			OrderID: event.OrderID,
 			UserID:  event.UserID,

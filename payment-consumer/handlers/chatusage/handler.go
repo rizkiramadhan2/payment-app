@@ -13,8 +13,6 @@ import (
 	"time"
 )
 
-const chatUsageAPIBase = "https://chat-usage.powpow.space/api/v1"
-
 type Event struct {
 	TrxID   string `json:"trx_id"`
 	OrderID string `json:"order_id"`
@@ -30,13 +28,13 @@ type usersResponse struct {
 	} `json:"users"`
 }
 
-func HandleUpdateUsage(ctx context.Context, authToken string, event Event) error {
+func HandleUpdateUsage(ctx context.Context, apiBaseURL, authToken string, event Event) error {
 	if event.Status != "completed" {
 		log.Println("[CHAT USAGE] ignored non-completed event:", event.Status)
 		return nil
 	}
 
-	currentBalance, err := getBalance(ctx, authToken, event.UserID)
+	currentBalance, err := getBalance(ctx, apiBaseURL, authToken, event.UserID)
 	if err != nil {
 		return fmt.Errorf("get balance: %w", err)
 	}
@@ -53,17 +51,17 @@ func HandleUpdateUsage(ctx context.Context, authToken string, event Event) error
 		event.UserID, currentBalance, usageCredit, newBalance,
 	)
 
-	return putBalance(ctx, authToken, event.UserID, newBalance)
+	return putBalance(ctx, apiBaseURL, authToken, event.UserID, newBalance)
 }
 
-func getBalance(ctx context.Context, authToken, userID string) (float64, error) {
+func getBalance(ctx context.Context, apiBaseURL, authToken, userID string) (float64, error) {
 	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
 	req, err := http.NewRequestWithContext(
 		reqCtx,
 		http.MethodGet,
-		chatUsageAPIBase+"/users/",
+		apiBaseURL+"/users/",
 		nil,
 	)
 	if err != nil {
@@ -101,7 +99,7 @@ func getBalance(ctx context.Context, authToken, userID string) (float64, error) 
 	return 0, fmt.Errorf("user %s not found", userID)
 }
 
-func putBalance(ctx context.Context, authToken, userID string, balance float64) error {
+func putBalance(ctx context.Context, apiBaseURL, authToken, userID string, balance float64) error {
 	reqCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
@@ -114,7 +112,7 @@ func putBalance(ctx context.Context, authToken, userID string, balance float64) 
 		return err
 	}
 
-	url := fmt.Sprintf("%s/users/%s/balance", chatUsageAPIBase, userID)
+	url := fmt.Sprintf("%s/users/%s/balance", apiBaseURL, userID)
 
 	req, err := http.NewRequestWithContext(
 		reqCtx,

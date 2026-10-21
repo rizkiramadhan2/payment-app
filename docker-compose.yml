@@ -131,6 +131,7 @@ services:
       RABBITMQ_EXCHANGE: ${RABBITMQ_EXCHANGE}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID}
+      CHAT_USAGE_API_BASE_URL: ${CHAT_USAGE_API_BASE_URL:-http://host.docker.internal:7878/api/v1}
       CHAT_USAGE_AUTH_TOKEN: ${CHAT_USAGE_AUTH_TOKEN}
       ENV: ${ENV}
       # Optional. Empty means log mock alert.
@@ -139,6 +140,8 @@ services:
       rabbitmq:
         condition: service_healthy
     restart: on-failure
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     networks:
       - payment-network
 

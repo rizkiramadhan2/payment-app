@@ -99,8 +99,10 @@ func startConsumer(
 	}
 
 	_, err = declareQueue(ch, retryName, amqp091.Table{
-		"x-dead-letter-exchange":    appCfg.RabbitMQExchange,
-		"x-dead-letter-routing-key": consumerCfg.BindingKey,
+		// Return only to this consumer's main queue. Sending retries back to
+		// the topic exchange also fan-outs usage retries to the alert queue.
+		"x-dead-letter-exchange":    "",
+		"x-dead-letter-routing-key": consumerCfg.QueueName,
 		"x-message-ttl":             retryDelayMs,
 	})
 	if err != nil {
@@ -247,6 +249,12 @@ func getRetryCount(headers amqp091.Table) int {
 	switch v := raw.(type) {
 	case int64:
 		return int(v)
+	case int32:
+		return int(v)
+	case int16:
+		return int(v)
+	case int8:
+		return int(v)
 	case int:
 		return v
 	case uint64:
@@ -293,9 +301,11 @@ func publishRetry(
 
 	headers["x-retry-count"] = retryCount
 
+	retryExchange, retryRoutingKey := retryPublishTarget(retryQueue)
+
 	return ch.Publish(
-		exchange,
-		retryQueue,
+		retryExchange,
+		retryRoutingKey,
 		false,
 		false,
 		amqp091.Publishing{
@@ -307,16 +317,21 @@ func publishRetry(
 	)
 }
 
+func retryPublishTarget(retryQueue string) (string, string) {
+	return "", retryQueue
+}
+
 func loadConfig() handlers.Config {
 	return handlers.Config{
-		RabbitMQURL:        getEnv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/"),
-		RabbitMQExchange:   getEnv("RABBITMQ_EXCHANGE", "payment.events"),
-		UsageAPIURL:        getEnv("USAGE_API_URL", "http://localhost:9002/v1/usage/payment"),
-		AlertAPIURL:        getEnv("ALERT_API_URL", ""),
-		AlertEmailAPIURL:   getEnv("ALERT_EMAIL_API_URL", ""),
-		TelegramBotToken:   getEnv("TELEGRAM_BOT_TOKEN", ""),
-		TelegramChatID:     getEnv("TELEGRAM_CHAT_ID", ""),
-		ChatUsageAuthToken: getEnv("CHAT_USAGE_AUTH_TOKEN", ""),
+		RabbitMQURL:         getEnv("RABBITMQ_URL", "amqp://guest:guest@localhost:5672/"),
+		RabbitMQExchange:    getEnv("RABBITMQ_EXCHANGE", "payment.events"),
+		UsageAPIURL:         getEnv("USAGE_API_URL", "http://localhost:9002/v1/usage/payment"),
+		AlertAPIURL:         getEnv("ALERT_API_URL", ""),
+		AlertEmailAPIURL:    getEnv("ALERT_EMAIL_API_URL", ""),
+		TelegramBotToken:    getEnv("TELEGRAM_BOT_TOKEN", ""),
+		TelegramChatID:      getEnv("TELEGRAM_CHAT_ID", ""),
+		ChatUsageAPIBaseURL: getEnv("CHAT_USAGE_API_BASE_URL", "https://chat-usage.powpow.space/api/v1"),
+		ChatUsageAuthToken:  getEnv("CHAT_USAGE_AUTH_TOKEN", ""),
 	}
 }
 
